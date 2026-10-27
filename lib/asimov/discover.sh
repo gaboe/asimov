@@ -204,7 +204,7 @@ discover_paths_in_spotlight_blind_spots() {
   if [[ ${#known_names[@]} -eq 0 ]]; then
     known_names=( -or -true )
   fi
-  find_parameters_known=( -not \( \( -false ${known_names[@]+"${known_names[@]}"} \) \
+  find_parameters_known=( -not \( -type d \( -false ${known_names[@]+"${known_names[@]}"} \) \
     -exec grep -Fxq -- {} "$known_paths" \; -prune \) )
 
   children_file="$(mktemp)"
