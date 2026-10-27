@@ -262,10 +262,93 @@ extra = ~/Private/Skip"
   # A malformed response must not silently suppress filesystem discovery.
   export ASIMOV_TEST_MDFIND_FOLDER_COUNT=unavailable
   run_asimov --dry-run --verbose "${HOME}/Private"
-  [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Would exclude: ${HOME}/Private/New/node_modules"* ]]
+  [[ "$status" -eq 0 ]] || return 1
+  [[ "$output" == *"Would exclude: ${HOME}/Private/New/node_modules"* ]] || return 1
   refute_cached "${HOME}/Private/New/node_modules"
   [[ "$(count_exclusions)" -eq 0 ]]
+}
+
+@test "zero unavailable and failed root counts search only visible included children" {
+  write_path_cache
+  create_project "Private/New" "package.json" "node_modules"
+  create_project ".Secret/New" "package.json" "node_modules"
+  create_project "Excluded/New" "package.json" "node_modules"
+  printf '%s\n' "${HOME}/Excluded" > "$ASIMOV_TEST_EXCLUSIONS"
+  trace_blind_spot_walks
+
+  local count
+  for count in 0 unavailable failed; do
+    export ASIMOV_TEST_MDFIND_FOLDER_COUNT="$count"
+    if [[ "$count" == failed ]]; then
+      export ASIMOV_TEST_MDFIND_COUNT_FAIL=1
+    fi
+    run_asimov --dry-run --verbose
+    [[ "$status" -eq 0 ]] || return 1
+    [[ "$output" == *"Would exclude: ${HOME}/Private/New/node_modules"* ]] || return 1
+    [[ "$output" != *"Would exclude: ${HOME}/.Secret/"* ]] || return 1
+    [[ "$output" != *"Would exclude: ${HOME}/Excluded/"* ]] || return 1
+    ! grep -Fxq "$HOME" "$ASIMOV_TEST_FIND_WALKS" || return 1
+    ! grep -Fxq "${HOME}/Excluded" "$ASIMOV_TEST_FIND_WALKS" || return 1
+  done
+}
+
+@test "scan child enumeration failure exits with an error" {
+  write_path_cache
+  trace_blind_spot_walks
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${HOME}/.test-bin/find"
+
+  run_asimov --dry-run --verbose
+  [[ "$output" == *"failed to list scan directory:"* ]] || return 1
+  [[ "$status" -ne 0 ]]
+}
+
+@test "newline child cannot escape the selected scan root" {
+  write_path_cache
+  mkdir -p "${HOME}/Scan/Private"$'\n.'
+  create_project "Outside/New" "package.json" "node_modules"
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  trace_blind_spot_walks
+
+  cd "${HOME}/Outside"
+  run_asimov --dry-run --verbose "${HOME}/Scan"
+  [[ "$status" -eq 0 ]] || return 1
+  [[ "$output" == *"Skipping child with a newline in its name:"* ]] || return 1
+  [[ "$output" != *"Would exclude:"* ]] || return 1
+  [[ ! -s "$ASIMOV_TEST_FIND_WALKS" ]]
+}
+
+@test "distinct excluded basenames cannot exceed find argument limits" {
+  write_path_cache
+  create_project "Private/New" "package.json" "node_modules"
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  export ASIMOV_TEST_MDFIND_RESULTS="${HOME}/.excluded-results"
+  local i suffix
+  printf -v suffix '%0180d' 0
+  for ((i=0; i<8000; i++)); do
+    printf '%s/excluded-%s-%s\n' "$HOME" "$i" "$suffix"
+  done > "$ASIMOV_TEST_MDFIND_RESULTS"
+
+  run_asimov --dry-run --verbose
+  [[ "$status" -eq 0 ]] || return 1
+  [[ "$output" == *"Would exclude: ${HOME}/Private/New/node_modules"* ]]
+}
+
+@test "blind spot find failure exits with an error" {
+  write_path_cache
+  create_project "Private/New" "package.json" "node_modules"
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  trace_blind_spot_walks
+  cat > "${HOME}/.test-bin/find" <<'STUB'
+#!/usr/bin/env bash
+case " $* " in
+  *" -maxdepth "*) exec /usr/bin/find "$@" ;;
+  *) exit 1 ;;
+esac
+STUB
+
+  run_asimov --dry-run --verbose
+  [[ "$output" == *"failed to search Spotlight blind spot:"* ]] || return 1
+  [[ "$status" -ne 0 ]]
 }
 
 @test "blind spot discovery supports an excluded-path cache larger than command arguments" {

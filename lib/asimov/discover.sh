@@ -173,7 +173,7 @@ discover_new_paths_via_mdfind() {
 # every descendant is indexed, so deeper isolated gaps still need a full scan.
 discover_paths_in_spotlight_blind_spots() {
   local cached_paths_file="$1"
-  local path pattern scan_dir candidate count skip known_paths
+  local path pattern scan_dir candidate count skip known_paths children_file
   local -a candidates=() find_parameters_known=() blocked_paths=() known_names=()
 
   build_find_skip_params
@@ -193,12 +193,21 @@ discover_paths_in_spotlight_blind_spots() {
     pattern="${pattern//\?/\\?}"
     pattern="${pattern//\[/\\[}"
     known_names+=( -or -name "$pattern" )
+    # At most 64 basenames, each bounded by the filesystem's name limit.
+    if [[ ${#known_names[@]} -gt 192 ]]; then
+      known_names=()
+      break
+    fi
   done < <(sed 's|.*/||' "$known_paths" | sort -u)
   # Keep arguments bounded even when the cache contains thousands of paths.
   # Only matching directory names need the exact path lookup.
+  if [[ ${#known_names[@]} -eq 0 ]]; then
+    known_names=( -or -true )
+  fi
   find_parameters_known=( -not \( \( -false ${known_names[@]+"${known_names[@]}"} \) \
     -exec grep -Fxq -- {} "$known_paths" \; -prune \) )
 
+  children_file="$(mktemp)"
   for scan_dir in "${ASIMOV_SCAN_DIRS[@]}"; do
     candidates=("$scan_dir")
     while [[ ${#candidates[@]} -gt 0 ]]; do
@@ -215,21 +224,36 @@ discover_paths_in_spotlight_blind_spots() {
       if tmutil isexcluded "$candidate" 2>/dev/null | grep -Fq '[Excluded]'; then
         continue
       fi
+      if [[ "$candidate" == "$scan_dir" ]]; then
+        if ! find "$scan_dir" -mindepth 1 -maxdepth 1 -not -name '.*' \( "${find_parameters_skip[@]}" \) \
+          \( -true "${find_parameters_known[@]}" \) -type d -print0 > "$children_file"; then
+          echo "asimov: failed to list scan directory: ${scan_dir}" >&2
+          rm -f "$known_paths" "$children_file"
+          return 1
+        fi
+        while IFS= read -r -d '' path; do
+          if [[ "$path" == *$'\n'* ]]; then
+            printf -v pattern '%q' "$path"
+            verbose_timing "Skipping child with a newline in its name: ${pattern}"
+            continue
+          fi
+          candidates+=("$path")
+        done < "$children_file"
+        continue
+      fi
       count="$(mdfind -onlyin "$candidate" -count 'kMDItemContentType == "public.folder"' 2>/dev/null)" || count=""
       if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then
-        if [[ "$candidate" == "$scan_dir" ]]; then
-          while IFS= read -r path; do
-            candidates+=("$path")
-          done < <(find "$scan_dir" -mindepth 1 -maxdepth 1 -not -name '.*' \( "${find_parameters_skip[@]}" \) \
-            \( -true ${find_parameters_known[@]+"${find_parameters_known[@]}"} \) -type d -print 2>/dev/null)
-        fi
         continue
       fi
       verbose_timing "Spotlight blind spot: ${candidate}. Searching with find…"
-      find "$candidate" \( "${find_parameters_skip[@]}" \) \
+      if ! find "$candidate" \( "${find_parameters_skip[@]}" \) \
         \( -true ${find_parameters_known[@]+"${find_parameters_known[@]}"} \) \
-        \( -false "${find_parameters_vendor[@]}" \) || true
+        \( -false "${find_parameters_vendor[@]}" \); then
+        echo "asimov: failed to search Spotlight blind spot: ${candidate}" >&2
+        rm -f "$known_paths" "$children_file"
+        return 1
+      fi
     done
   done
-  rm -f "$known_paths"
+  rm -f "$known_paths" "$children_file"
 }
