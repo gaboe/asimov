@@ -173,7 +173,7 @@ discover_new_paths_via_mdfind() {
 # every descendant is indexed, so deeper isolated gaps still need a full scan.
 discover_paths_in_spotlight_blind_spots() {
   local cached_paths_file="$1"
-  local path pattern scan_dir candidate count skip known_paths children_file
+  local path pattern scan_dir candidate count skip known_paths children_file known_argument_bytes=0
   local -a candidates=() find_parameters_known=() blocked_paths=() known_names=()
 
   build_find_skip_params
@@ -193,8 +193,9 @@ discover_paths_in_spotlight_blind_spots() {
     pattern="${pattern//\?/\\?}"
     pattern="${pattern//\[/\\[}"
     known_names+=( -or -name "$pattern" )
-    # At most 64 basenames, each bounded by the filesystem's name limit.
-    if [[ ${#known_names[@]} -gt 192 ]]; then
+    # Allow four bytes per character plus argument overhead within a 128 KiB budget.
+    known_argument_bytes=$((known_argument_bytes + ${#pattern} * 4 + 32))
+    if [[ "$known_argument_bytes" -gt 131072 ]]; then
       known_names=()
       break
     fi
