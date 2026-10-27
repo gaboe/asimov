@@ -212,12 +212,15 @@ discover_paths_in_spotlight_blind_spots() {
         fi
       done
       [[ "$skip" == true ]] && continue
+      if tmutil isexcluded "$candidate" 2>/dev/null | grep -Fq '[Excluded]'; then
+        continue
+      fi
       count="$(mdfind -onlyin "$candidate" -count 'kMDItemContentType == "public.folder"' 2>/dev/null)" || count=""
       if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then
         if [[ "$candidate" == "$scan_dir" ]]; then
           while IFS= read -r path; do
             candidates+=("$path")
-          done < <(find "$scan_dir" -mindepth 1 -maxdepth 1 \( "${find_parameters_skip[@]}" \) \
+          done < <(find "$scan_dir" -mindepth 1 -maxdepth 1 -not -name '.*' \( "${find_parameters_skip[@]}" \) \
             \( -true ${find_parameters_known[@]+"${find_parameters_known[@]}"} \) -type d -print 2>/dev/null)
         fi
         continue

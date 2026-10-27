@@ -178,12 +178,14 @@ So Asimov's own exclusions clean themselves up. Only sticky entries, set by othe
 Asimov keeps a cache under `~/.cache/asimov/` to speed up repeat runs.
 
 On cached runs, Spotlight finds new projects in indexed directories. Asimov checks
-folder counts for each scan root and its immediate children. If a count is zero
+folder counts for each scan root and its visible immediate children. Directories
+already excluded from Time Machine are not probed or searched. If a count is zero
 or unavailable, Asimov searches that directory with the full scan's sentinel and
 skip rules. Cached paths and known exclusions are pruned from this search.
 `--verbose` lists these Spotlight blind spots. This needs no configuration.
 An indexed child can still contain an unindexed directory deeper in its tree.
 Use `--no-read-cache` to find projects in those deeper gaps.
+Full scans also search hidden directories.
 
 The cache flags control reading and writing separately:
 

@@ -18,7 +18,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Fixed
 
 - Cached runs now search scan roots and immediate children that Spotlight does not
-  index, so new dependency directories there do not need a full scan.
+  index, so new dependency directories there do not need a full scan. Hidden
+  children and directories already excluded from Time Machine are skipped.
 
 - Sentinel matches nested under directories configured with `[fixed_dirs] extra` are now
   skipped, avoiding redundant per-directory Time Machine exclusions before the configured

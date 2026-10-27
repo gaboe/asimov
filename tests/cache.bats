@@ -155,6 +155,40 @@ load test_helper
   assert_cached "${HOME}/Private Code/New Project/node_modules"
 }
 
+@test "hidden blind spot child is neither probed nor walked on a cached run" {
+  write_path_cache
+  create_project ".Private/New" "package.json" "node_modules"
+  export ASIMOV_TEST_MDFIND_BLIND_SPOTS="${HOME}/.blind-spots"
+  printf '%s\n' "${HOME}/.Private" > "$ASIMOV_TEST_MDFIND_BLIND_SPOTS"
+  export ASIMOV_TEST_MDFIND_PROBES="${HOME}/.probes"
+  trace_blind_spot_walks
+
+  run_asimov --verbose
+  [[ "$status" -eq 0 ]]
+  refute_excluded "${HOME}/.Private/New/node_modules"
+  ! grep -Fxq "${HOME}/.Private" "$ASIMOV_TEST_MDFIND_PROBES"
+  [[ ! -s "$ASIMOV_TEST_FIND_WALKS" ]]
+}
+
+@test "excluded blind spot children are neither probed nor walked" {
+  write_path_cache
+  create_project "Excluded/New" "package.json" "node_modules"
+  create_project "Parent/Child/New" "package.json" "node_modules"
+  printf '%s\n' "${HOME}/Excluded" "${HOME}/Parent" > "$ASIMOV_TEST_EXCLUSIONS"
+  export ASIMOV_TEST_MDFIND_BLIND_SPOTS="${HOME}/.blind-spots"
+  printf '%s\n' "${HOME}/Excluded" "${HOME}/Parent/Child" > "$ASIMOV_TEST_MDFIND_BLIND_SPOTS"
+  export ASIMOV_TEST_MDFIND_PROBES="${HOME}/.probes"
+  trace_blind_spot_walks
+
+  run_asimov --verbose "$HOME" "${HOME}/Parent/Child"
+  [[ "$status" -eq 0 ]]
+  refute_cached "${HOME}/Excluded/New/node_modules"
+  refute_cached "${HOME}/Parent/Child/New/node_modules"
+  ! grep -Fxq "${HOME}/Excluded" "$ASIMOV_TEST_MDFIND_PROBES"
+  ! grep -Fxq "${HOME}/Parent/Child" "$ASIMOV_TEST_MDFIND_PROBES"
+  [[ ! -s "$ASIMOV_TEST_FIND_WALKS" ]]
+}
+
 @test "indexed child uses Spotlight without recursive find" {
   write_path_cache
   create_project "Indexed/Reported" "package.json" "node_modules"
