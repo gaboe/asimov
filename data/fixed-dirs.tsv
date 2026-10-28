@@ -12,6 +12,7 @@
 
 # path	tool	note
 .cache	xdg	XDG cache directory
+.deppoc	deppoc	build server caches
 .gradle/caches	gradle	download cache
 .gradle/wrapper	gradle	wrapper distributions
 .kube/cache	kubernetes	API cache
