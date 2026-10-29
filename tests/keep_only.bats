@@ -117,11 +117,171 @@ keep = memory"
   local first_count
   first_count="$(count_exclusions)"
   [[ "$first_count" -eq 2 ]]
+  [[ "$(count_addexclusion_calls)" -gt 0 ]]
+  : > "$ASIMOV_TEST_ADD_EXCLUSION_CALLS"
 
   run_asimov
 
   [[ "$status" -eq 0 ]]
   [[ "$(count_exclusions)" -eq "$first_count" ]]
+  [[ "$(count_addexclusion_calls)" -eq 0 ]]
+}
+
+@test "full scan keeps an ancestor when it contains a kept child" {
+  local project="${HOME}/Code/app"
+  mkdir -p "$project/node_modules/memory" "$project/node_modules/log"
+  touch "$project/package.json" "$project/node_modules/session.jsonl"
+  write_config "[keep_only]
+dir = ~/Code/app/node_modules
+keep = memory"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$project/node_modules"
+  refute_excluded "$project/node_modules/memory"
+  assert_excluded "$project/node_modules/log"
+  assert_excluded "$project/node_modules/session.jsonl"
+}
+
+@test "cached scan keeps an ancestor and excludes its non-kept children" {
+  local project="${HOME}/Code/app"
+  mkdir -p "$project/node_modules/memory" "$project/node_modules/log"
+  touch "$project/package.json" "$project/node_modules/session.jsonl"
+  write_path_cache "$project/node_modules"
+  write_config "[keep_only]
+dir = ~/Code/app/node_modules
+keep = memory"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$project/node_modules"
+  refute_excluded "$project/node_modules/memory"
+  assert_excluded "$project/node_modules/log"
+  assert_excluded "$project/node_modules/session.jsonl"
+}
+
+@test "fixed_dirs extra keeps an ancestor and excludes its non-kept children" {
+  local cache="${HOME}/cache"
+  mkdir -p "$cache/memory" "$cache/log"
+  touch "$cache/session.jsonl"
+  write_config "[fixed_dirs]
+extra = ~/cache
+[keep_only]
+dir = ~/cache
+keep = memory"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$cache"
+  refute_excluded "$cache/memory"
+  assert_excluded "$cache/log"
+  assert_excluded "$cache/session.jsonl"
+}
+
+@test "nested keep-only rules keep descendants and exclude their siblings" {
+  local projects="${HOME}/projects"
+  mkdir -p "$projects/settings" "$projects/a/memory" "$projects/a/settings"
+  touch "$projects/a/log"
+  write_config "[keep_only]
+dir = ~/projects
+keep = settings
+dir = ~/projects/a
+keep = memory"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$projects/a"
+  refute_excluded "$projects/a/memory"
+  refute_excluded "$projects/settings"
+  assert_excluded "$projects/a/log"
+  assert_excluded "$projects/a/settings"
+}
+
+@test "equivalent keep-only directory spellings union their kept names" {
+  local project="${HOME}/projects/a"
+  mkdir -p "$project/memory" "$project/settings" "$project/transcripts"
+  touch "$project/log"
+  write_config "[keep_only]
+dir = ~/projects/a/
+keep = memory
+dir = ~/projects/a//.
+keep = settings
+dir = ~/projects/a/.
+keep = transcripts"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$project/memory"
+  refute_excluded "$project/settings"
+  refute_excluded "$project/transcripts"
+  assert_excluded "$project/log"
+}
+
+@test "newline child names are skipped without excluding their parent" {
+  local project="${HOME}/projects/a"
+  local newline_child="${project}/"$'\n'
+  mkdir -p "$project/memory"
+  touch "$project/log" "$newline_child"
+  write_config "[keep_only]
+dir = ~/projects/a
+keep = memory"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "$project"
+  refute_excluded "$project/memory"
+  refute_excluded "${project}/"
+  assert_excluded "$project/log"
+}
+
+@test "fixed_dirs extra still accepts a symlink to a directory" {
+  local target="${HOME}/cache-target"
+  local extra_link="${HOME}/cache-link"
+  mkdir -p "$target"
+  ln -s "$target" "$extra_link"
+  write_config "[fixed_dirs]
+extra = ~/cache-link"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  assert_excluded "$extra_link"
+}
+
+@test "built-in fixed directories still accept a symlink to a directory" {
+  local target="${HOME}/cache-target"
+  local builtin_link="${HOME}/.npm/_cacache"
+  mkdir -p "$target" "${HOME}/.npm"
+  ln -s "$target" "$builtin_link"
+  write_config "[fixed_dirs]
+enabled = true"
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  assert_excluded "$builtin_link"
+}
+
+@test "cached paths still accept a symlink to a directory" {
+  local target="${HOME}/cache-target"
+  local project="${HOME}/Code/app"
+  local cached_link="${project}/node_modules"
+  mkdir -p "$target" "$project"
+  ln -s "$target" "$cached_link"
+  touch "$project/package.json"
+  write_path_cache "$cached_link"
+  write_config ""
+
+  run_asimov
+
+  [[ "$status" -eq 0 ]]
+  assert_excluded "$cached_link"
 }
 
 @test "doctor reports keep before dir" {

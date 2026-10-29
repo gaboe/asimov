@@ -23,6 +23,9 @@ setup() {
   ASIMOV_TEST_EXCLUSIONS="${TEST_TEMP_DIR}/.exclusions"
   export ASIMOV_TEST_EXCLUSIONS
   touch "$ASIMOV_TEST_EXCLUSIONS"
+  ASIMOV_TEST_ADD_EXCLUSION_CALLS="${TEST_TEMP_DIR}/.addexclusion-calls"
+  export ASIMOV_TEST_ADD_EXCLUSION_CALLS
+  touch "$ASIMOV_TEST_ADD_EXCLUSION_CALLS"
 
   # How to launch the script under test. asimov's shebang is #!/usr/bin/env bash,
   # so in real use it runs under whichever bash comes first on PATH: 3.2 on a
@@ -68,6 +71,13 @@ run_asimov() {
 count_exclusions() {
   local count
   count="$(wc -l < "$ASIMOV_TEST_EXCLUSIONS" | tr -d ' ')"
+  echo "$count"
+}
+
+# Return the number of addexclusion commands sent to the mock tmutil.
+count_addexclusion_calls() {
+  local count
+  count="$(wc -l < "$ASIMOV_TEST_ADD_EXCLUSION_CALLS" | tr -d ' ')"
   echo "$count"
 }
 

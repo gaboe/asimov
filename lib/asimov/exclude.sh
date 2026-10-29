@@ -37,20 +37,53 @@ record_excluded_path() {
 #   1. Bulk grep against Spotlight + persistent state (instant, catches ~90%)
 #   2. Filter descendants of fixed dirs (instant, catches ~5%)
 #   3. tmutil isexcluded per-path guard (fast, catches remaining stale entries)
+normalize_existing_path() {
+    local path="$1" directory basename normalized_directory
+    if [[ -d "$path" ]]; then
+        (cd "$path" && pwd)
+    elif [[ -f "$path" && ! -L "$path" ]]; then
+        directory="${path%/*}"
+        basename="${path##*/}"
+        if [[ "$directory" == "$path" ]]; then
+            directory=.
+        elif [[ -z "$directory" ]]; then
+            directory=/
+        fi
+        normalized_directory="$(cd "$directory" && pwd)" || return 1
+        if [[ "$normalized_directory" == / ]]; then
+            printf '/%s\n' "$basename"
+        else
+            printf '%s/%s\n' "$normalized_directory" "$basename"
+        fi
+    else
+        return 1
+    fi
+}
+
 exclude_paths_from_stdin() {
-    local path
+    local path comparison_path
     local -a all_paths=()
 
-    # A kept child and its descendants must remain available to Time Machine.
+    # A path that contains, equals, or sits inside a kept child must stay available.
     local kept_path
     while IFS=$'\n' read -r path; do
-        [[ -e "$path" && ! -L "$path" ]] || continue
+        [[ -d "$path" || ( -f "$path" && ! -L "$path" ) ]] || continue
+        comparison_path="$path"
+        if [[ ${#ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]} -gt 0 ]]; then
+            case "$path" in
+                *//*|*/./*|*/.|*/../*|*/..|*/)
+                    comparison_path="$(normalize_existing_path "$path")" || continue
+                    ;;
+            esac
+        fi
         for kept_path in ${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]+"${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]}"}; do
-            if [[ "$path" == "$kept_path" || "$path" == "$kept_path/"* ]]; then
+            if [[ "$comparison_path" == "$kept_path" \
+                || "$comparison_path" == "$kept_path/"* \
+                || "$kept_path" == "$comparison_path/"* ]]; then
                 continue 2
             fi
         done
-        all_paths+=("$path")
+        all_paths+=("$comparison_path")
     done
     [[ ${#all_paths[@]} -eq 0 ]] && return 0
 
@@ -88,6 +121,25 @@ exclude_paths_from_stdin() {
     for configured_fixed_dir in ${ASIMOV_CONFIG_EXTRA_FIXED_DIRS[@]+"${ASIMOV_CONFIG_EXTRA_FIXED_DIRS[@]}"}; do
         effective_fixed_dirs+=("$configured_fixed_dir")
     done
+
+    if [[ ${#ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]} -gt 0 && ${#effective_fixed_dirs[@]} -gt 0 ]]; then
+        local -a unprotected_fixed_dirs=()
+        local normalized_fixed_dir protected_path protected_fixed_dir
+        for fixed_dir in "${effective_fixed_dirs[@]}"; do
+            normalized_fixed_dir="$(normalize_existing_path "$fixed_dir")" || normalized_fixed_dir="$fixed_dir"
+            protected_fixed_dir=false
+            for protected_path in "${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]}"; do
+                if [[ "$normalized_fixed_dir" == "$protected_path" \
+                    || "$normalized_fixed_dir" == "$protected_path/"* \
+                    || "$protected_path" == "$normalized_fixed_dir/"* ]]; then
+                    protected_fixed_dir=true
+                    break
+                fi
+            done
+            [[ "$protected_fixed_dir" == true ]] || unprotected_fixed_dirs+=("$fixed_dir")
+        done
+        effective_fixed_dirs=("${unprotected_fixed_dirs[@]+"${unprotected_fixed_dirs[@]}"}")
+    fi
 
     if [[ ${#effective_fixed_dirs[@]} -gt 0 && ${#to_exclude[@]} -gt 0 ]]; then
         local -a filtered_exclude=()
@@ -179,16 +231,17 @@ prepare_keep_only() {
     ASIMOV_KEEP_ONLY_MATCHED_RULES=()
     ASIMOV_KEEP_ONLY_PRESERVED_PATHS=()
 
-    local rule pattern matched keep_i
+    local rule pattern matched normalized keep_i
     for ((rule = 0; rule < ${#ASIMOV_CONFIG_KEEP_ONLY_DIRS[@]}; rule++)); do
         pattern="${ASIMOV_CONFIG_KEEP_ONLY_DIRS[$rule]}"
         while IFS= read -r matched; do
             [[ -d "$matched" && ! -L "$matched" ]] || continue
-            ASIMOV_KEEP_ONLY_MATCHED_DIRS+=("$matched")
+            normalized="$(cd "$matched" && pwd)" || continue
+            ASIMOV_KEEP_ONLY_MATCHED_DIRS+=("$normalized")
             ASIMOV_KEEP_ONLY_MATCHED_RULES+=("$rule")
             for ((keep_i = 0; keep_i < ${#ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[@]}; keep_i++)); do
                 [[ "${ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[$keep_i]}" == "$rule" ]] || continue
-                ASIMOV_KEEP_ONLY_PRESERVED_PATHS+=("${matched}/${ASIMOV_CONFIG_KEEP_ONLY_KEEPS[$keep_i]}")
+                ASIMOV_KEEP_ONLY_PRESERVED_PATHS+=("${normalized}/${ASIMOV_CONFIG_KEEP_ONLY_KEEPS[$keep_i]}")
             done
         done < <(compgen -G "$pattern" || true)
     done
@@ -214,6 +267,7 @@ exclude_keep_only_children() {
         for child in "${direct_children[@]}"; do
             [[ -e "$child" && ! -L "$child" ]] || continue
             base="${child##*/}"
+            [[ "$base" != *$'\n'* ]] || continue
             is_kept=false
             local matching_rule
             for ((matching_rule = 0; matching_rule < ${#ASIMOV_KEEP_ONLY_MATCHED_DIRS[@]}; matching_rule++)); do

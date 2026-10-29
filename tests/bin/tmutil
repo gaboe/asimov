@@ -46,6 +46,9 @@ case "$subcommand" in
     fi
     ;;
   addexclusion)
+    if [[ -n "${ASIMOV_TEST_ADD_EXCLUSION_CALLS:-}" ]]; then
+      printf '%s\n' "$*" >> "$ASIMOV_TEST_ADD_EXCLUSION_CALLS"
+    fi
     # Supports multiple paths: tmutil addexclusion path1 path2 ...
     for path in "$@"; do
       # Simulate failure for paths listed in ASIMOV_TEST_TMUTIL_FAIL_PATHS
