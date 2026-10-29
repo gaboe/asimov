@@ -68,13 +68,10 @@ exclude_paths_from_stdin() {
     local kept_path
     while IFS=$'\n' read -r path; do
         [[ -d "$path" || ( -f "$path" && ! -L "$path" ) ]] || continue
-        comparison_path="$path"
         if [[ ${#ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]} -gt 0 ]]; then
-            case "$path" in
-                *//*|*/./*|*/.|*/../*|*/..|*/)
-                    comparison_path="$(normalize_existing_path "$path")" || continue
-                    ;;
-            esac
+            comparison_path="$(normalize_existing_path "$path")" || continue
+        else
+            comparison_path="$path"
         fi
         for kept_path in ${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]+"${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]}"}; do
             if [[ "$comparison_path" == "$kept_path" \
@@ -83,7 +80,7 @@ exclude_paths_from_stdin() {
                 continue 2
             fi
         done
-        all_paths+=("$comparison_path")
+        all_paths+=("$path")
     done
     [[ ${#all_paths[@]} -eq 0 ]] && return 0
 
@@ -231,10 +228,17 @@ prepare_keep_only() {
     ASIMOV_KEEP_ONLY_MATCHED_RULES=()
     ASIMOV_KEEP_ONLY_PRESERVED_PATHS=()
 
-    local rule pattern matched normalized keep_i
+    local rule pattern matched normalized keep_i nullglob_was_set=false IFS=$'\n'
+    local -a matched_dirs=()
+    if shopt -q nullglob; then nullglob_was_set=true; fi
+    shopt -s nullglob
     for ((rule = 0; rule < ${#ASIMOV_CONFIG_KEEP_ONLY_DIRS[@]}; rule++)); do
         pattern="${ASIMOV_CONFIG_KEEP_ONLY_DIRS[$rule]}"
-        while IFS= read -r matched; do
+        # Newlines cannot frame glob results safely, so expand directly into an array.
+        # shellcheck disable=SC2206
+        matched_dirs=( $pattern )
+        for matched in "${matched_dirs[@]}"; do
+            [[ "$matched" != *$'\n'* ]] || continue
             [[ -d "$matched" && ! -L "$matched" ]] || continue
             normalized="$(cd "$matched" && pwd)" || continue
             ASIMOV_KEEP_ONLY_MATCHED_DIRS+=("$normalized")
@@ -243,8 +247,9 @@ prepare_keep_only() {
                 [[ "${ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[$keep_i]}" == "$rule" ]] || continue
                 ASIMOV_KEEP_ONLY_PRESERVED_PATHS+=("${normalized}/${ASIMOV_CONFIG_KEEP_ONLY_KEEPS[$keep_i]}")
             done
-        done < <(compgen -G "$pattern" || true)
+        done
     done
+    [[ "$nullglob_was_set" == true ]] || shopt -u nullglob
 }
 
 # Exclude every direct child that no matching keep-only rule names. All paths
