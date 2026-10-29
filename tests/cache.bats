@@ -364,7 +364,9 @@ STUB
 
   run_asimov --verbose
   [[ "$status" -eq 0 ]] || return 1
-  [[ "$output" == *"warning: cannot read Spotlight blind spot path: ${HOME}/Private/Unreadable"* ]] || return 1
+  [[ "$output" == *"asimov: warning: some paths under ${HOME}/Private could not be read; skipped them"* ]] || return 1
+  [[ "$(printf '%s\n' "$output" | grep -F -c "asimov: warning: some paths under ${HOME}/Private could not be read; skipped them")" -eq 1 ]] || return 1
+  [[ "$output" != *"warning: some paths under ${HOME}/Private/Unreadable"* ]] || return 1
   assert_excluded "${HOME}/Private/Readable Project/node_modules"
 }
 
@@ -381,9 +383,25 @@ STUB
 
   run_asimov --verbose
   [[ "$status" -eq 0 ]] || return 1
-  [[ "$output" == *"warning: cannot read Spotlight blind spot path: ${unreadable_dir}"* ]] || return 1
-  [[ "$(printf '%s\n' "$output" | grep -F -c 'warning: cannot read Spotlight blind spot path:')" -eq 1 ]] || return 1
+  [[ "$output" == *"asimov: warning: some paths under ${HOME}/Private could not be read; skipped them"* ]] || return 1
+  [[ "$(printf '%s\n' "$output" | grep -F -c "asimov: warning: some paths under ${HOME}/Private could not be read; skipped them")" -eq 1 ]] || return 1
+  [[ "$output" != *"warning: some paths under ${unreadable_dir}"* ]] || return 1
   assert_excluded "${HOME}/Private/Readable Project/node_modules"
+}
+
+@test "crafted find diagnostic never appears in a warning path" {
+  write_path_cache
+  create_project "Private/Readable Project" "package.json" "node_modules"
+  local unreadable_dir="${HOME}/Private/Unreadable"$'\n'"find: stderr-derived path"
+  mkdir -p "$unreadable_dir"
+  chmod 000 "$unreadable_dir"
+  ASIMOV_TEST_UNREADABLE_DIR="$unreadable_dir"
+  export ASIMOV_TEST_UNREADABLE_DIR
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  trace_blind_spot_walks
+
+  run_asimov --verbose
+  ! printf '%s\n' "$output" | grep -F 'warning:' | grep -F 'stderr-derived path'
 }
 
 @test "blind spot discovery supports an excluded-path cache larger than command arguments" {

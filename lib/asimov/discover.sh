@@ -258,7 +258,6 @@ discover_paths_in_spotlight_blind_spots() {
       else
         permission_errors_only=true
         record=""
-        permission_paths=()
         if [[ ! -s "$find_errors" ]]; then
           permission_errors_only=false
         else
@@ -268,12 +267,8 @@ discover_paths_in_spotlight_blind_spots() {
                 if [[ -n "$record" ]]; then
                   case "$record" in
                     *': Operation not permitted')
-                      permission_path="${record#find: }"
-                      permission_paths+=("${permission_path%: Operation not permitted}")
                       ;;
                     *': Permission denied')
-                      permission_path="${record#find: }"
-                      permission_paths+=("${permission_path%: Permission denied}")
                       ;;
                     *) permission_errors_only=false ;;
                   esac
@@ -292,21 +287,15 @@ discover_paths_in_spotlight_blind_spots() {
           if [[ -n "$record" ]]; then
             case "$record" in
               *': Operation not permitted')
-                permission_path="${record#find: }"
-                permission_paths+=("${permission_path%: Operation not permitted}")
                 ;;
               *': Permission denied')
-                permission_path="${record#find: }"
-                permission_paths+=("${permission_path%: Permission denied}")
                 ;;
               *) permission_errors_only=false ;;
             esac
           fi
         fi
-        if [[ "$permission_errors_only" == true && ${#permission_paths[@]} -gt 0 ]]; then
-          for permission_path in "${permission_paths[@]}"; do
-            printf 'asimov: warning: cannot read Spotlight blind spot path: %s\n' "$permission_path" >&2
-          done
+        if [[ "$permission_errors_only" == true ]]; then
+          printf 'asimov: warning: some paths under %s could not be read; skipped them\n' "$candidate" >&2
           rm -f "$find_errors"
         else
           cat "$find_errors" >&2
