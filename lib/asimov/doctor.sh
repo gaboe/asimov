@@ -261,7 +261,7 @@ doctor_check_config() {
 
     # Same grammar load_config accepts, but here anything unrecognised is
     # reported instead of silently ignored — a typo'd key is invisible otherwise.
-    local section="" line key unknown=0
+    local section="" line key unknown=0 keep_only_seen_dir=""
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%%#*}"
         line="${line#"${line%%[![:space:]]*}"}"
@@ -271,7 +271,7 @@ doctor_check_config() {
         if [[ "$line" =~ ^\[([a-z_]+)\]$ ]]; then
             section="${BASH_REMATCH[1]}"
             case "$section" in
-                fixed_dirs|scan|sentinels|skip_paths) ;;
+                fixed_dirs|scan|sentinels|skip_paths|keep_only) ;;
                 *)
                     unknown=$((unknown + 1))
                     doctor_problem "unknown section [${section}] in ${ASIMOV_CONFIG_FILE}"
@@ -285,10 +285,24 @@ doctor_check_config() {
             case "${section}:${key}" in
                 fixed_dirs:enabled|fixed_dirs:extra|scan:extra|scan:dirs|\
                 sentinels:extra|sentinels:disabled|skip_paths:extra) ;;
+                keep_only:dir)
+                    keep_only_seen_dir=1
+                    ;;
+                keep_only:keep)
+                    local keep_value="${BASH_REMATCH[2]}"
+                    if [[ -z "$keep_only_seen_dir" ]]; then
+                        unknown=$((unknown + 1))
+                        doctor_problem "keep_only:keep must follow a keep_only:dir in ${ASIMOV_CONFIG_FILE}"
+                    fi
+                    if [[ "$keep_value" == */* ]]; then
+                        unknown=$((unknown + 1))
+                        doctor_problem "keep_only:keep must be a basename in ${ASIMOV_CONFIG_FILE}"
+                    fi
+                    ;;
                 *)
                     # A key under an already-reported section is the same fault.
                     case "$section" in
-                        fixed_dirs|scan|sentinels|skip_paths)
+                        fixed_dirs|scan|sentinels|skip_paths|keep_only)
                             unknown=$((unknown + 1))
                             doctor_problem "unknown key '${key}' under [${section}] in ${ASIMOV_CONFIG_FILE}"
                             ;;

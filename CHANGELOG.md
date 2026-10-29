@@ -8,6 +8,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
+- `[keep_only]` config section to exclude every direct child of matching directories except named basenames, such as `memory` under Claude project directories.
+
 - `[scan] dirs` config key: an exhaustive list of scan roots, unlike `[scan] extra` which
   adds to home. Home is scanned only if you list it yourself, so you can scan just
   `~/Code` instead of all of home

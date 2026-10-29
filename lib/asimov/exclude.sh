@@ -41,9 +41,15 @@ exclude_paths_from_stdin() {
     local path
     local -a all_paths=()
 
-    # Read all paths from stdin, filtering non-directories
+    # A kept child and its descendants must remain available to Time Machine.
+    local kept_path
     while IFS=$'\n' read -r path; do
-        [[ -d "$path" ]] || continue
+        [[ -e "$path" && ! -L "$path" ]] || continue
+        for kept_path in ${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]+"${ASIMOV_KEEP_ONLY_PRESERVED_PATHS[@]}"}; do
+            if [[ "$path" == "$kept_path" || "$path" == "$kept_path/"* ]]; then
+                continue 2
+            fi
+        done
         all_paths+=("$path")
     done
     [[ ${#all_paths[@]} -eq 0 ]] && return 0
@@ -164,6 +170,72 @@ exclude_paths_from_stdin() {
     if [[ $skipped_already -gt 0 ]]; then
         verbose_timing "Skipped ${skipped_already} already-excluded paths (Spotlight cache was stale)"
     fi
+}
+
+# Expand keep-only directory patterns and remember the paths that must survive
+# normal dependency scans. Each pattern can match several directories.
+prepare_keep_only() {
+    ASIMOV_KEEP_ONLY_MATCHED_DIRS=()
+    ASIMOV_KEEP_ONLY_MATCHED_RULES=()
+    ASIMOV_KEEP_ONLY_PRESERVED_PATHS=()
+
+    local rule pattern matched keep_i
+    for ((rule = 0; rule < ${#ASIMOV_CONFIG_KEEP_ONLY_DIRS[@]}; rule++)); do
+        pattern="${ASIMOV_CONFIG_KEEP_ONLY_DIRS[$rule]}"
+        while IFS= read -r matched; do
+            [[ -d "$matched" && ! -L "$matched" ]] || continue
+            ASIMOV_KEEP_ONLY_MATCHED_DIRS+=("$matched")
+            ASIMOV_KEEP_ONLY_MATCHED_RULES+=("$rule")
+            for ((keep_i = 0; keep_i < ${#ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[@]}; keep_i++)); do
+                [[ "${ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[$keep_i]}" == "$rule" ]] || continue
+                ASIMOV_KEEP_ONLY_PRESERVED_PATHS+=("${matched}/${ASIMOV_CONFIG_KEEP_ONLY_KEEPS[$keep_i]}")
+            done
+        done < <(compgen -G "$pattern" || true)
+    done
+}
+
+# Exclude every direct child that no matching keep-only rule names. All paths
+# pass through the same cache, guard, dry-run, and output handling as other work.
+exclude_keep_only_children() {
+    [[ ${#ASIMOV_KEEP_ONLY_MATCHED_DIRS[@]} -gt 0 ]] || return 0
+
+    [[ -z "$ASIMOV_QUIET" ]] && printf '\n%s%s%s\n' \
+        "$ASIMOV_COLOR_INFO" '🧹 Excluding all but kept entries…' "$ASIMOV_COLOR_RESET"
+
+    local dir child base keep_i rule_i configured_rule is_kept
+    local nullglob_was_set=false dotglob_was_set=false
+    local -a children=() direct_children=()
+    if shopt -q nullglob; then nullglob_was_set=true; fi
+    if shopt -q dotglob; then dotglob_was_set=true; fi
+    shopt -s nullglob dotglob
+    for ((rule_i = 0; rule_i < ${#ASIMOV_KEEP_ONLY_MATCHED_DIRS[@]}; rule_i++)); do
+        dir="${ASIMOV_KEEP_ONLY_MATCHED_DIRS[$rule_i]}"
+        direct_children=("${dir}"/*)
+        for child in "${direct_children[@]}"; do
+            [[ -e "$child" && ! -L "$child" ]] || continue
+            base="${child##*/}"
+            is_kept=false
+            local matching_rule
+            for ((matching_rule = 0; matching_rule < ${#ASIMOV_KEEP_ONLY_MATCHED_DIRS[@]}; matching_rule++)); do
+                [[ "${ASIMOV_KEEP_ONLY_MATCHED_DIRS[$matching_rule]}" == "$dir" ]] || continue
+                configured_rule="${ASIMOV_KEEP_ONLY_MATCHED_RULES[$matching_rule]}"
+                for ((keep_i = 0; keep_i < ${#ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[@]}; keep_i++)); do
+                    if [[ "${ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES[$keep_i]}" == "$configured_rule" \
+                        && "${ASIMOV_CONFIG_KEEP_ONLY_KEEPS[$keep_i]}" == "$base" ]]; then
+                        is_kept=true
+                        break
+                    fi
+                done
+                [[ "$is_kept" == true ]] && break
+            done
+            [[ "$is_kept" == true ]] || children+=("$child")
+        done
+    done
+    [[ "$nullglob_was_set" == true ]] || shopt -u nullglob
+    [[ "$dotglob_was_set" == true ]] || shopt -u dotglob
+
+    [[ ${#children[@]} -gt 0 ]] || return 0
+    printf '%s\n' "${children[@]}" | sort -u | exclude_paths_from_stdin
 }
 
 # Feed a list of directories that exist to exclude_paths_from_stdin, under a

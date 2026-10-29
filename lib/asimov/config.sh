@@ -16,10 +16,13 @@ load_config() {
     ASIMOV_CONFIG_SCAN_DIRS=()
     ASIMOV_CONFIG_SCAN_DIRS_ONLY=()
     ASIMOV_CONFIG_EXTRA_SKIP_PATHS=()
+    ASIMOV_CONFIG_KEEP_ONLY_DIRS=()
+    ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES=()
+    ASIMOV_CONFIG_KEEP_ONLY_KEEPS=()
 
     [[ -f "$ASIMOV_CONFIG_FILE" ]] || return 0
 
-    local section="" line key value
+    local section="" line key value keep_only_rule=-1
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%%#*}"
         line="${line#"${line%%[![:space:]]*}"}"
@@ -61,6 +64,17 @@ load_config() {
                 skip_paths:extra)
                     value="${value/#\~/$HOME}"
                     ASIMOV_CONFIG_EXTRA_SKIP_PATHS+=("$value")
+                    ;;
+                keep_only:dir)
+                    value="${value/#\~/$HOME}"
+                    ASIMOV_CONFIG_KEEP_ONLY_DIRS+=("$value")
+                    keep_only_rule=$((${#ASIMOV_CONFIG_KEEP_ONLY_DIRS[@]} - 1))
+                    ;;
+                keep_only:keep)
+                    if [[ "$keep_only_rule" -ge 0 ]]; then
+                        ASIMOV_CONFIG_KEEP_ONLY_KEEP_RULES+=("$keep_only_rule")
+                        ASIMOV_CONFIG_KEEP_ONLY_KEEPS+=("$value")
+                    fi
                     ;;
             esac
         fi

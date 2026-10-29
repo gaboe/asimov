@@ -298,6 +298,19 @@ extra   = ~/my-build-cache       # plus any paths you name (always excluded when
 extra   = ~/golang/pkg/mod       # e.g. a Go module cache under a custom GOPATH
 ```
 
+### Keep selected entries in directories
+
+Use `[keep_only]` when you want to exclude every direct child of matching directories except named entries. A `dir` pattern matches directories only. Asimov expands `~` and shell glob characters in each pattern.
+
+```ini
+[keep_only]
+dir = ~/.claude/projects/*       # one rule; glob patterns can match many directories
+keep = memory                    # keep this direct child in every matched directory
+keep = settings                  # add more kept basenames to the current rule
+```
+
+Each `dir` starts a new rule. Add one or more `keep` lines after it. Asimov excludes files, folders, and dotfiles that do not match a kept basename. It skips symlinks. An unmatched pattern has no effect. Kept folders and their contents stay available to Time Machine.
+
 ### Skip parts of your home directory
 
 Asimov never descends into `~/.Trash` or `~/Library`. Add directories of your own under `[skip_paths]` and they're left alone too - not searched, never excluded:

@@ -73,6 +73,7 @@ cmd_scan() {
     fi
 
     build_excluded_cache
+    prepare_keep_only
 
     # Cache is read when the cache file exists and reads aren't disabled
     # (--no-read-cache / --full-scan / --no-cache force a full scan).
@@ -91,6 +92,7 @@ cmd_scan() {
         exclude_existing_dirs '⚙️  Excluding user-configured directories…' \
             "${ASIMOV_CONFIG_EXTRA_FIXED_DIRS[@]}"
     fi
+    exclude_keep_only_children
 
     verbose_timing "All exclusions processed"
     [[ -z "$ASIMOV_QUIET" ]] && print_exclusion_summary
