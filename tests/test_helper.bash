@@ -5,6 +5,7 @@
 # Set up a clean, isolated environment for each test.
 setup() {
   TEST_TEMP_DIR="$(mktemp -d)"
+  ASIMOV_TEST_STICKY_PLIST=""
   export HOME="$TEST_TEMP_DIR"
   export PATH="${BATS_TEST_DIRNAME}/bin:$PATH"
 
@@ -37,6 +38,7 @@ setup() {
 
 # Clean up the temporary directory after each test.
 teardown() {
+  [[ -z "$ASIMOV_TEST_STICKY_PLIST" ]] || rm -f "$ASIMOV_TEST_STICKY_PLIST"
   if [[ -n "${ASIMOV_TEST_UNREADABLE_DIR:-}" ]]; then
     chmod u+rwx "$ASIMOV_TEST_UNREADABLE_DIR" 2>/dev/null || true
   fi
@@ -208,7 +210,13 @@ load_format_size_kb() {
 #
 # Usage: write_sticky_exclusions "/path/one" "/path/two"
 write_sticky_exclusions() {
-    local plist="${TEST_TEMP_DIR}/com.apple.TimeMachine.plist"
+    local plist
+    if [[ -d /private/tmp && -w /private/tmp ]]; then
+        plist="/private/tmp/asimov-${TEST_TEMP_DIR##*/}-TimeMachine.plist"
+    else
+        plist="${TEST_TEMP_DIR}/com.apple.TimeMachine.plist"
+    fi
+    ASIMOV_TEST_STICKY_PLIST="$plist"
     local path
     /usr/libexec/PlistBuddy -c "Add :SkipPaths array" "$plist" >/dev/null 2>&1 \
         || /usr/libexec/PlistBuddy -c "Delete :SkipPaths" -c "Add :SkipPaths array" "$plist" >/dev/null 2>&1
