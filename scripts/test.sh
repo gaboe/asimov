@@ -13,6 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 readonly TEST_FILES=(
     tests/sentinels.bats
     tests/behavior.bats
+    tests/keep_only.bats
     tests/cache.bats
     tests/doctor.bats
     tests/data.bats

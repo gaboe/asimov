@@ -145,3 +145,14 @@ keep = memory/extra"
   [[ "$status" -eq 1 ]]
   [[ "$output" == *"keep_only:keep must be a basename"* ]]
 }
+
+@test "doctor accepts valid keep-only directory and basename keys" {
+  write_config "[keep_only]
+dir = ~/projects/*
+keep = memory"
+
+  run_asimov doctor
+
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"${HOME}/.config/asimov/config looks valid"* ]]
+}
