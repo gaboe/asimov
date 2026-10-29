@@ -392,7 +392,7 @@ STUB
 @test "crafted find diagnostic never appears in a warning path" {
   write_path_cache
   create_project "Private/Readable Project" "package.json" "node_modules"
-  local unreadable_dir="${HOME}/Private/Unreadable"$'\n'"find: stderr-derived path"
+  local unreadable_dir="${HOME}/Private/Unreadable: Permission denied"$'\n'"find: stderr-derived path"
   mkdir -p "$unreadable_dir"
   chmod 000 "$unreadable_dir"
   ASIMOV_TEST_UNREADABLE_DIR="$unreadable_dir"
@@ -401,6 +401,7 @@ STUB
   trace_blind_spot_walks
 
   run_asimov --verbose
+  [[ "$status" -eq 0 ]] || return 1
   ! printf '%s\n' "$output" | grep -F 'warning:' | grep -F 'stderr-derived path'
 }
 
