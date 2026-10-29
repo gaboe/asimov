@@ -240,6 +240,43 @@ keep = memory"
   assert_excluded "$project/log"
 }
 
+@test "relative candidates preserve absolute keep-only paths" {
+  local app="${HOME}/Code/app"
+  local fixed="${HOME}/Code/fixed"
+  mkdir -p "$app/node_modules/memory" "$fixed/memory"
+  touch "$app/package.json" "$app/log" "$fixed/log"
+  write_config "[fixed_dirs]
+extra = Code/fixed
+[keep_only]
+dir = ~/Code/app
+keep = node_modules
+dir = ~/Code/fixed
+keep = memory"
+
+  cd "$HOME"
+  run_asimov Code
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "Code/app/node_modules"
+  refute_excluded "Code/fixed"
+  assert_excluded "$app/log"
+  assert_excluded "$fixed/log"
+}
+
+@test "newline matched directory does not exclude its parent siblings" {
+  local project="${HOME}/projects/"$'\n'
+  mkdir -p "$project/memory"
+  touch "$project/log" "${HOME}/projects/unrelated.txt"
+  write_config "[keep_only]
+dir = ~/projects/*
+keep = memory"
+
+  run_asimov --quiet
+
+  [[ "$status" -eq 0 ]]
+  refute_excluded "${HOME}/projects/unrelated.txt"
+}
+
 @test "fixed_dirs extra still accepts a symlink to a directory" {
   local target="${HOME}/cache-target"
   local extra_link="${HOME}/cache-link"
