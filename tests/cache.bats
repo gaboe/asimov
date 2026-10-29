@@ -368,6 +368,24 @@ STUB
   assert_excluded "${HOME}/Private/Readable Project/node_modules"
 }
 
+@test "newline in unreadable blind spot path warns once and keeps readable results" {
+  write_path_cache
+  create_project "Private/Readable Project" "package.json" "node_modules"
+  local unreadable_dir="${HOME}/Private/Unreadable"$'\n'"Second line"
+  mkdir -p "$unreadable_dir"
+  chmod 000 "$unreadable_dir"
+  ASIMOV_TEST_UNREADABLE_DIR="$unreadable_dir"
+  export ASIMOV_TEST_UNREADABLE_DIR
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  trace_blind_spot_walks
+
+  run_asimov --verbose
+  [[ "$status" -eq 0 ]] || return 1
+  [[ "$output" == *"warning: cannot read Spotlight blind spot path: ${unreadable_dir}"* ]] || return 1
+  [[ "$(printf '%s\n' "$output" | grep -F -c 'warning: cannot read Spotlight blind spot path:')" -eq 1 ]] || return 1
+  assert_excluded "${HOME}/Private/Readable Project/node_modules"
+}
+
 @test "blind spot discovery supports an excluded-path cache larger than command arguments" {
   write_path_cache
   create_project "Private/New" "package.json" "node_modules"
