@@ -173,7 +173,7 @@ discover_new_paths_via_mdfind() {
 # every descendant is indexed, so deeper isolated gaps still need a full scan.
 discover_paths_in_spotlight_blind_spots() {
   local cached_paths_file="$1"
-  local path pattern scan_dir candidate count skip known_paths children_file known_argument_bytes=0
+  local path pattern scan_dir candidate count skip known_paths children_file find_errors find_error permission_path permission_errors_only known_argument_bytes=0
   local -a candidates=() find_parameters_known=() blocked_paths=() known_names=()
 
   build_find_skip_params
@@ -247,12 +247,40 @@ discover_paths_in_spotlight_blind_spots() {
         continue
       fi
       verbose_timing "Spotlight blind spot: ${candidate}. Searching with find…"
-      if ! find "$candidate" \( "${find_parameters_skip[@]}" \) \
+      find_errors="$(mktemp)"
+      if find "$candidate" \( "${find_parameters_skip[@]}" \) \
         \( -true ${find_parameters_known[@]+"${find_parameters_known[@]}"} \) \
-        \( -false "${find_parameters_vendor[@]}" \); then
-        echo "asimov: failed to search Spotlight blind spot: ${candidate}" >&2
-        rm -f "$known_paths" "$children_file"
-        return 1
+        \( -false "${find_parameters_vendor[@]}" \) 2>"$find_errors"; then
+        rm -f "$find_errors"
+      else
+        permission_errors_only=true
+        if [[ ! -s "$find_errors" ]]; then
+          permission_errors_only=false
+        else
+          while IFS= read -r find_error || [[ -n "$find_error" ]]; do
+            case "$find_error" in
+              'find: '*': Operation not permitted'|'find: '*': Permission denied') ;;
+              *) permission_errors_only=false; break ;;
+            esac
+          done < "$find_errors"
+        fi
+        if [[ "$permission_errors_only" == true ]]; then
+          while IFS= read -r find_error || [[ -n "$find_error" ]]; do
+            permission_path="${find_error#find: }"
+            case "$permission_path" in
+              *': Operation not permitted') permission_path="${permission_path%: Operation not permitted}" ;;
+              *': Permission denied') permission_path="${permission_path%: Permission denied}" ;;
+            esac
+            printf 'asimov: warning: cannot read Spotlight blind spot path: %s\n' "$permission_path" >&2
+          done < "$find_errors"
+          rm -f "$find_errors"
+        else
+          cat "$find_errors" >&2
+          rm -f "$find_errors"
+          echo "asimov: failed to search Spotlight blind spot: ${candidate}" >&2
+          rm -f "$known_paths" "$children_file"
+          return 1
+        fi
       fi
     done
   done

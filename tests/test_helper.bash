@@ -37,6 +37,9 @@ setup() {
 
 # Clean up the temporary directory after each test.
 teardown() {
+  if [[ -n "${ASIMOV_TEST_UNREADABLE_DIR:-}" ]]; then
+    chmod u+rwx "$ASIMOV_TEST_UNREADABLE_DIR" 2>/dev/null || true
+  fi
   rm -rf "$TEST_TEMP_DIR"
 }
 

@@ -342,13 +342,30 @@ extra = ~/Private/Skip"
 #!/usr/bin/env bash
 case " $* " in
   *" -maxdepth "*) exec /usr/bin/find "$@" ;;
-  *) exit 1 ;;
+  *) echo 'find: injected failure' >&2; exit 1 ;;
 esac
 STUB
 
   run_asimov --dry-run --verbose
   [[ "$output" == *"failed to search Spotlight blind spot:"* ]] || return 1
+  [[ "$output" == *"find: injected failure"* ]] || return 1
   [[ "$status" -ne 0 ]]
+}
+
+@test "blind spot permission errors warn and keep readable results" {
+  write_path_cache
+  create_project "Private/Readable Project" "package.json" "node_modules"
+  mkdir -p "${HOME}/Private/Unreadable"
+  chmod 000 "${HOME}/Private/Unreadable"
+  ASIMOV_TEST_UNREADABLE_DIR="${HOME}/Private/Unreadable"
+  export ASIMOV_TEST_UNREADABLE_DIR
+  export ASIMOV_TEST_MDFIND_FOLDER_COUNT=0
+  trace_blind_spot_walks
+
+  run_asimov --verbose
+  [[ "$status" -eq 0 ]] || return 1
+  [[ "$output" == *"warning: cannot read Spotlight blind spot path: ${HOME}/Private/Unreadable"* ]] || return 1
+  assert_excluded "${HOME}/Private/Readable Project/node_modules"
 }
 
 @test "blind spot discovery supports an excluded-path cache larger than command arguments" {
